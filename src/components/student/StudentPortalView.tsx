@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BookOpen,
   Send,
@@ -12,6 +12,8 @@ import {
   ChevronRight,
   RotateCcw,
   Sparkles,
+  Lock,
+  Layers,
 } from 'lucide-react';
 import { TestSession, StudentRecord, StudentRaschResult } from '../../types';
 import { calculateRaschGrade } from '../../math/raschGrades';
@@ -21,11 +23,17 @@ import { submitStudentAnswer } from '../../services/firebase';
 interface StudentPortalViewProps {
   session: TestSession;
   onStudentSubmitted: (updatedSession: TestSession) => void;
+  onOpenAdminLogin?: () => void;
+  savedSessions?: TestSession[];
+  onSelectSession?: (sessionId: string) => void;
 }
 
 export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   session,
   onStudentSubmitted,
+  onOpenAdminLogin,
+  savedSessions = [],
+  onSelectSession,
 }) => {
   const [studentName, setStudentName] = useState('');
   const [studentClass, setStudentClass] = useState(session.groupName || '');
@@ -36,6 +44,13 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   const [activeTab, setActiveTab] = useState<'book' | 'answers'>('answers');
   const [submittedResult, setSubmittedResult] = useState<StudentRaschResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setAnswers(new Array(session.questionCount).fill('-'));
+    setQuickString('');
+    setStudentClass(session.groupName || '');
+    setSubmittedResult(null);
+  }, [session.id, session.questionCount]);
 
   const filledCount = answers.filter((a) => a && a !== '-').length;
   const targetCount = session.questionCount;
@@ -226,10 +241,30 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
       {/* Test sarlavhasi banneri */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-widest bg-indigo-50 px-2 py-0.5 rounded-full">
-            Farg‘oniy Maktabi • O‘quvchilar xonasi
-          </span>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-widest bg-indigo-50 px-2 py-0.5 rounded-full">
+              Farg‘oniy Maktabi • O‘quvchilar xonasi
+            </span>
+            {savedSessions.length > 1 && onSelectSession && (
+              <div className="relative inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-lg">
+                <Layers className="w-3 h-3 text-indigo-600" />
+                <label htmlFor="test-select" className="text-[11px] text-slate-500 font-medium">Testni tanlash:</label>
+                <select
+                  id="test-select"
+                  value={session.id}
+                  onChange={(e) => onSelectSession(e.target.value)}
+                  className="text-xs bg-transparent border-0 font-bold text-indigo-900 cursor-pointer focus:outline-none"
+                >
+                  {savedSessions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.title} ({s.groupName})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1.5">
             {session.title}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">

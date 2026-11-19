@@ -15,6 +15,11 @@ import {
   setActiveSessionId,
   createNewSession,
 } from './storage/testStorage';
+import {
+  subscribeToSessions,
+  subscribeFirebaseStatus,
+  FirebaseStatus,
+} from './services/firebase';
 import { analyzeTestSession } from './math/testAnalysis';
 import { Navbar } from './components/Navbar';
 import { TestHeaderForm } from './components/TestHeaderForm';
@@ -49,15 +54,23 @@ import {
   AlertCircle,
   Eye,
   ShieldAlert,
+  Lock,
+  Cloud,
+  AlertTriangle,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 export function App() {
-  // Standart holatda o'qituvchi boshqaruv paneli
+  // Kirish bilan avtomatik adminga kirib ketmaslik uchun false (sessionStorage asosida)
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
-    const val = localStorage.getItem('zehnora_is_admin_v1');
-    if (val === null) return true;
-    return val === 'true';
+    return sessionStorage.getItem('zehnora_admin_session_v1') === 'true';
   });
+
+  // Firebase statusi va xavfsizlik qoidalari ogohlantirishi
+  const [firebaseStatus, setFirebaseStatusState] = useState<FirebaseStatus>('idle');
+  const [isCopiedRules, setIsCopiedRules] = useState<boolean>(false);
+  const [dismissFirebaseBanner, setDismissFirebaseBanner] = useState<boolean>(false);
 
   // 3 asosiy qadam: 'setup' (Sinov & Kalit) | 'students' (Skaner & O'quvchilar) | 'results' (Rash Tahlili)
   const [activeStep, setActiveStep] = useState<'setup' | 'students' | 'results'>('setup');
@@ -108,6 +121,13 @@ export function App() {
   };
 
   useEffect(() => {
+    // Eski avtomatik admin kirish flagini tozalash
+    try {
+      localStorage.removeItem('zehnora_is_admin_v1');
+    } catch (e) {
+      console.warn(e);
+    }
+
     // Brauzerda avval saqlanib qolgan har qanday demo sinovlarni tozalash
     try {
       const raw = localStorage.getItem('zehnora_rash_sessions_v1');
@@ -130,6 +150,47 @@ export function App() {
       console.warn(e);
     }
     reloadSavedSessions();
+
+    // Firebase ulanish holatini kuzatish
+    const unsubStatus = subscribeFirebaseStatus((st) => {
+      setFirebaseStatusState(st);
+    });
+
+    // Firebase Firestore-dan testlarni jonli sinxronlash
+    const unsubSessions = subscribeToSessions(
+      (remoteSessions) => {
+        if (remoteSessions && remoteSessions.length > 0) {
+          remoteSessions.forEach((rSess) => {
+            saveSession(rSess, false);
+          });
+          reloadSavedSessions();
+
+          setSession((current) => {
+            const matched = remoteSessions.find((s) => s.id === current.id);
+            if (matched) {
+              const prevTime = new Date(current.updatedAt || 0).getTime();
+              const matchTime = new Date(matched.updatedAt || 0).getTime();
+              if (matchTime >= prevTime) {
+                return matched;
+              }
+              return current;
+            }
+            if (current.students.length === 0 && remoteSessions.length > 0) {
+              return remoteSessions[0];
+            }
+            return current;
+          });
+        }
+      },
+      (err) => {
+        console.warn('Firebase sinxronlash xatosi:', err);
+      }
+    );
+
+    return () => {
+      unsubStatus();
+      unsubSessions();
+    };
   }, []);
 
   const handleUpdateSession = (updatedFields: Partial<TestSession>) => {
@@ -287,13 +348,13 @@ export function App() {
 
   const handleLoginSuccess = () => {
     setIsAdmin(true);
-    localStorage.setItem('zehnora_is_admin_v1', 'true');
+    sessionStorage.setItem('zehnora_admin_session_v1', 'true');
     setIsAdminLoginOpen(false);
   };
 
   const handleLogoutAdmin = () => {
     setIsAdmin(false);
-    localStorage.setItem('zehnora_is_admin_v1', 'false');
+    sessionStorage.removeItem('zehnora_admin_session_v1');
   };
 
   // OMR Skanerdan natija qaytganda
@@ -379,6 +440,7 @@ export function App() {
         currentSession={session}
         savedSessionsCount={savedSessions.length}
         isAdmin={isAdmin}
+        firebaseStatus={firebaseStatus}
         onNewSession={handleNewSession}
         onOpenSavedModal={() => setIsSavedModalOpen(true)}
         onOpenInfoModal={() => setIsInfoModalOpen(true)}
@@ -390,20 +452,67 @@ export function App() {
         onOpenOmrScanner={() => setIsOmrScannerOpen(true)}
       />
 
-      {/* O'QUVCHI PORTALI KO'RINISHI (Agar o'qituvchi o'quvchi rejimiga o'tsa) */}
+      {/* Firebase Firestore xavfsizlik qoidalari ogohlantirish banneri */}
+      {firebaseStatus === 'permission_denied' && !dismissFirebaseBanner && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-950 px-4 py-3 text-xs shadow-xs no-print animate-fadeIn">
+          <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block text-amber-900">
+                  Firebase Firestore xavfsizlik qoidasi (permission-denied):
+                </span>
+                <p className="text-amber-800 text-[11px] mt-0.5">
+                  Testlar brauzeringizda saqlanmoqda, biroq Firebase bulutiga yuklanishi uchun <strong>Firebase Console &gt; Firestore Database &gt; Rules</strong> bo‘limida <code>allow read, write: if true;</code> qilib <em>Publish</em> tugmasini bosing.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const ruleText = `rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}`;
+                  navigator.clipboard.writeText(ruleText);
+                  setIsCopiedRules(true);
+                  setTimeout(() => setIsCopiedRules(false), 2500);
+                }}
+                className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-lg font-bold flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                {isCopiedRules ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{isCopiedRules ? 'Nusxalandi!' : 'Qoidani nusxalash'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissFirebaseBanner(true)}
+                className="text-amber-700 hover:text-amber-900 underline text-[11px] cursor-pointer ml-1"
+              >
+                Yopish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* O'QUVCHI PORTALI KO'RINISHI (Agar o'qituvchi admin sifatida kirmagan bo'lsa) */}
       {!isAdmin ? (
         <main>
-          <div className="bg-amber-500 text-white px-4 py-2 text-xs flex items-center justify-between shadow-xs">
-            <span>Siz hozir o‘quvchilar test topshirish portalidasiz.</span>
+          <div className="bg-slate-900 text-white px-4 py-2.5 text-xs flex items-center justify-between shadow-xs">
+            <span className="flex items-center gap-1.5 text-slate-300">
+              <span>📚 Farg‘oniy Maktabi — O‘quvchilar test topshirish portali</span>
+            </span>
             <button
-              onClick={() => setIsAdmin(true)}
-              className="font-bold underline cursor-pointer"
+              onClick={() => setIsAdminLoginOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer transition-colors shadow-2xs"
             >
-              O‘qituvchi boshqaruviga qaytish →
+              <Lock className="w-3.5 h-3.5" />
+              <span>O‘qituvchi / Admin kirish →</span>
             </button>
           </div>
           <StudentPortalView
             session={session}
+            savedSessions={savedSessions}
+            onSelectSession={handleSelectSession}
+            onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
             onStudentSubmitted={(updatedSess) => {
               setSession(updatedSess);
               saveSession(updatedSess);

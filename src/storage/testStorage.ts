@@ -28,11 +28,11 @@ export function getAllSessions(): TestSession[] {
   }
 }
 
-export function saveSession(session: TestSession): void {
+export function saveSession(session: TestSession, syncToRemote = true): void {
   try {
     const sessions = getAllSessions();
     const existingIdx = sessions.findIndex((s) => s.id === session.id);
-    const updatedSession = { ...session, updatedAt: new Date().toISOString() };
+    const updatedSession = { ...session, updatedAt: session.updatedAt || new Date().toISOString() };
 
     if (existingIdx >= 0) {
       sessions[existingIdx] = updatedSession;
@@ -44,9 +44,11 @@ export function saveSession(session: TestSession): void {
     localStorage.setItem(STORAGE_KEY_ACTIVE_ID, session.id);
 
     // Firebase Firestore bilan sinxronlash
-    syncSessionToFirebase(updatedSession).catch((err) => {
-      console.warn('Firebase sync xatosi:', err);
-    });
+    if (syncToRemote) {
+      syncSessionToFirebase(updatedSession).catch((err) => {
+        console.warn('Firebase sync xatosi:', err);
+      });
+    }
   } catch (e) {
     console.error('Sessiyani saqlashda xatolik:', e);
   }

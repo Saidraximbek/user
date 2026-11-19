@@ -117,6 +117,29 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
             </div>
           </div>
 
+          {/* Firestore Xavfsizlik qoidalari ko'rsatmasi */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-950 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[11px] text-amber-900">
+                Firestore Xavfsizlik Qoidasi (Rules):
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const ruleText = `rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}`;
+                  navigator.clipboard.writeText(ruleText);
+                  alert('Qoidalar nusxalandi! Firebase Console > Firestore > Rules ga joylashtiring.');
+                }}
+                className="text-[10px] font-bold text-amber-800 bg-amber-200/70 hover:bg-amber-200 px-2 py-0.5 rounded cursor-pointer"
+              >
+                Nusxalash
+              </button>
+            </div>
+            <p className="text-[10px] text-amber-800 leading-relaxed">
+              Firebase Console &gt; Firestore Database &gt; Rules bo‘limida <code>allow read, write: if true;</code> qilib <em>Publish</em> tugmasini bosing.
+            </p>
+          </div>
+
           <div className="flex items-center justify-between pt-4 border-t border-slate-200">
             <button
               type="button"

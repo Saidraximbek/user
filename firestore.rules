@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Zehnora - Rash tahlili ilovasi uchun o'qish va yozish ruxsatlari
+    // O'qituvchi va o'quvchilar testlar va javoblarni sinxronlashi uchun
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
